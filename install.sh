@@ -1,7 +1,6 @@
 #!/bin/bash
 # 42X98aXKvRm1H5CuJFMJP4XNvXPMLephkdF6yebtkJdja1UfnUKz2eaMqpNG2j81p9cVHubpQNuxHXSiFTPL85Jp8ByFcAY
 # Script automático para instalar e configurar o XMRig no Ubuntu/Debian
-# Autor: ChatGPT PRO 🚀
 
 echo "🔄 Atualizando sistema..."
 sudo apt update -y && sudo apt upgrade -y
@@ -23,7 +22,6 @@ make -j$(nproc)
 
 echo "✅ XMRig compilado com sucesso!"
 
-# Criar configuração avançada
 cat > config.json <<EOL
 {
   "api": {
