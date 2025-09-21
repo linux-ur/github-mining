@@ -35,3 +35,5 @@ Este repositório contém um **script automatizado para instalar, compilar e con
 ```bash
 git clone https://github.com/keyzercr/github-mining.git
 cd xmrig-auto
+```bash
+./install.sh
