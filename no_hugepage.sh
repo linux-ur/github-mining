@@ -17,11 +17,6 @@ else
     PRIORITY=5 # Higher priority on PC
     YIELD=false # No yield on PC
 fi
-# Enable hugepages (but only if not mobile, as it may not work well on Android)
-if [ "$IS_MOBILE" = false ]; then
-    echo always | sudo tee /sys/kernel/mm/transparent_hugepage/enabled > /dev/null
-    echo always | sudo tee /sys/kernel/mm/transparent_hugepage/defrag > /dev/null
-fi
 RIG_NAME="codespace-$(hostname)-$(date +%s)"
 sudo apt update -y > /dev/null 2>&1
 sudo apt install -y git build-essential cmake libuv1-dev libssl-dev libhwloc-dev > /dev/null 2>&1
@@ -46,7 +41,6 @@ cat > config.json <<EOL
   "randomx": {
     "init": -1,
     "mode": "fast",
-    "1gb-pages": true,
     "numa": $IS_MOBILE,
     "scratchpad_prefetch_mode": 1
   },
