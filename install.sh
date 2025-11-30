@@ -1,66 +1,55 @@
 #!/bin/bash
 set -e
 
-# Detect CPU architecture
 ARCH=$(uname -m)
 CPU_CORES=$(nproc)
 
-# Detect if likely mobile (ARM-based, e.g., Android Termux or Raspberry Pi)
-if [[ "$ARCH" == "aarch64" || "$ARCH" == "armv7l" || "$ARCH" == "armv8l" ]]; then
+echo "Quantos % da CPU você deseja usar? (1-100)"
+read -r CPU_PERCENT
+CPU_PERCENT=${CPU_PERCENT:-90}
+if ! [[ "$CPU_PERCENT" =~ ^[0-9]+$ ]] || [ "$CPU_PERCENT" -lt 1 ] || [ "$CPU_PERCENT" -gt 100 ]; then
+    echo "Valor inválido. Usando 90%."
+    CPU_PERCENT=90
+fi
+
+if [[ "$ARCH" == "aarch64" || "$ARCH" == "armv7l" ]]; then
     IS_MOBILE=true
-    echo "Detected mobile/ARM device. Optimizing for efficiency (lower threads, priority)."
-    MAX_THREADS_HINT=50  # Use 50% of cores on mobile to avoid overheating/battery drain
-    PRIORITY=0           # Lower priority on mobile
-    YIELD=true           # Yield CPU on mobile for better responsiveness
+    PRIORITY=0
+    YIELD=true
 else
     IS_MOBILE=false
-    echo "Detected desktop/server (x86_64). Optimizing for maximum performance."
-    MAX_THREADS_HINT=100 # Use full capacity on PC
-    PRIORITY=5           # Higher priority on PC
-    YIELD=false          # No yield on PC
+    PRIORITY=5
+    YIELD=false
 fi
 
-# Set hugepages (skip or reduce on mobile if RAM is low)
 MEMTOTAL_KB=$(awk '/^MemTotal:/ {print $2}' /proc/meminfo)
-RESERVE_KB=2097152
-if [ "$IS_MOBILE" = true ]; then
-    # On mobile, reserve more and use fewer hugepages
-    RESERVE_KB=4194304  # Reserve 4GB equivalent
-fi
+RESERVE_KB=$((IS_MOBILE == true ? 4194304 : 2097152))
 AVAILABLE_KB=$((MEMTOTAL_KB > RESERVE_KB ? MEMTOTAL_KB - RESERVE_KB : 0))
 HUGEPAGES=$((AVAILABLE_KB / 2048))
-if [ $HUGEPAGES -gt 0 ]; then
-    echo $HUGEPAGES | sudo tee /proc/sys/vm/nr_hugepages > /dev/null
-fi
+[ "$HUGEPAGES" -gt 0 ] && echo "$HUGEPAGES" | sudo tee /proc/sys/vm/nr_hugepages >/dev/null
 
-# Enable hugepages (but only if not mobile, as it may not work well on Android)
-if [ "$IS_MOBILE" = false ]; then
-    echo always | sudo tee /sys/kernel/mm/transparent_hugepage/enabled > /dev/null
-    echo always | sudo tee /sys/kernel/mm/transparent_hugepage/defrag > /dev/null
-fi
+[ "$IS_MOBILE" = false ] && {
+    echo always | sudo tee /sys/kernel/mm/transparent_hugepage/enabled >/dev/null
+    echo always | sudo tee /sys/kernel/mm/transparent_hugepage/defrag >/dev/null
+}
 
-RIG_NAME="codespace-$(hostname)-$(date +%s)"
+RIG_NAME="rig-$(hostname)-$(date +%s)"
 
-sudo apt update -y > /dev/null 2>&1
-sudo apt install -y git build-essential cmake libuv1-dev libssl-dev libhwloc-dev > /dev/null 2>&1
+sudo apt update -y >/dev/null 2>&1
+sudo apt install -y git build-essential cmake libuv1-dev libssl-dev libhwloc-dev >/dev/null 2>&1
 
-cd ~
-[ ! -d "xmrig" ] && git clone https://github.com/xmrig/xmrig.git > /dev/null 2>&1
-cd xmrig
+[ ! -d "~/xmrig" ] && git clone https://github.com/xmrig/xmrig.git ~/xmrig >/dev/null 2>&1
+cd ~/xmrig
 mkdir -p build && cd build
 
-# Build flags: Disable unnecessary features for mobile
 CMAKE_FLAGS="-DWITH_HWLOC=ON -DWITH_CN_GHOUL=OFF -DWITH_OPENCL=OFF -DWITH_CUDA=OFF -DCMAKE_BUILD_TYPE=Release"
-if [ "$IS_MOBILE" = true ]; then
-    CMAKE_FLAGS="$CMAKE_FLAGS -DWITH_ASM=OFF"  # Disable ASM on ARM for stability
-fi
+[ "$IS_MOBILE" = true ] && CMAKE_FLAGS="$CMAKE_FLAGS -DWITH_ASM=OFF"
 
-cmake .. $CMAKE_FLAGS > /dev/null
-make -j$CPU_CORES > /dev/null
+cmake .. $CMAKE_FLAGS >/dev/null
+make -j$(nproc) >/dev/null
 
 WALLET="42X98aXKvRm1H5CuJFMJP4XNvXPMLephkdF6yebtkJdja1UfnUKz2eaMqpNG2j81p9cVHubpQNuxHXSiFTPL85Jp8ByFcAY"
 
-# Generate config.json with dynamic settings
 cat > config.json <<EOL
 {
   "autosave": true,
@@ -80,16 +69,15 @@ cat > config.json <<EOL
     "hw-aes": null,
     "priority": $PRIORITY,
     "memory-pool": true,
-    "max-threads-hint": $MAX_THREADS_HINT,
+    "max-threads-hint": $CPU_PERCENT,
     "affinity": -1,
     "asm": $IS_MOBILE,
-    "argon2-impl": "auto",
     "yield": $YIELD
   },
   "opencl": { "enabled": false },
   "cuda": { "enabled": false },
   "donate-level": 1,
-  "log-file": "xmrig.log",
+  "log-file": null,
   "pools": [
     {
       "algo": "rx/0",
@@ -97,8 +85,6 @@ cat > config.json <<EOL
       "url": "pool.hashvault.pro:443",
       "user": "$WALLET",
       "pass": "$RIG_NAME",
-      "rig-id": null,
-      "nicehash": false,
       "keepalive": true,
       "enabled": true,
       "tls": true,
@@ -108,21 +94,16 @@ cat > config.json <<EOL
   "print-time": 10,
   "retries": 5,
   "retry-pause": 1,
-  "user-agent": "XMRig-$( [ "$IS_MOBILE" = true ] && echo "Mobile" || echo "Desktop" )-$ARCH/$CPU_CORES-core",
-  "watch": false
+  "user-agent": "XMRig/$( [ "$IS_MOBILE" = true ] && echo Mobile || echo Desktop )-$ARCH"
 }
 EOL
 
-# Adjust process priority and I/O based on device
-if [ "$IS_MOBILE" = true ]; then
-    # On mobile: lower priority, no ionice (may not be available)
-    sudo renice -n $PRIORITY -p $$ 2>/dev/null || true
-else
-    # On PC: high priority, low I/O nice
-    sudo renice -n -$PRIORITY -p $$ 2>/dev/null || true
-    sudo ionice -c 1 -p $$ 2>/dev/null || true
-fi
+[ "$IS_MOBILE" = true ] && sudo renice -n $PRIORITY -p $$ >/dev/null 2>&1
+[ "$IS_MOBILE" = false ] && {
+    sudo renice -n -$PRIORITY -p $$ >/dev/null 2>&1
+    sudo ionice -c 1 -p $$ >/dev/null 2>&1
+}
 
-sleep 2
-
+echo "Iniciando minerador com $CPU_PERCENT% da CPU..."
+sleep 3
 ./xmrig -c config.json
